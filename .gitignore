@@ -5,9 +5,9 @@
 
 # User specific folders
 data/
-docs/
 imgs/
 models/
+specs/
 tools/jthomfuncs.r
 
 /.quarto/
