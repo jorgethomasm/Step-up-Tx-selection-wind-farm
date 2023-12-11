@@ -1,0 +1,13 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# User specific folders
+data/
+docs/
+imgs/
+models/
+tools/jthomfuncs.r
+
+/.quarto/
