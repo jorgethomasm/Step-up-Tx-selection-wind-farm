@@ -6,15 +6,14 @@ author: Jorge Thomas
 format:    
     html:
       self-contained: true
-      code-fold: true
+      code-fold: true      
       df-print: tibble
       code-summary: "Show the code"
       grid: 
-        margin-width: 350px
-reference-location: margin 
+        margin-width: 400px
+reference-location: section 
 bibliography: references.bib
 ---
-
 
 ::: {#fig-intro layout-ncol="1"}
 
@@ -71,8 +70,8 @@ There are 61 variables named:
 ```{r}
 #| label: extract
 #| echo: false
-#| output: true
 #| warning: false
+#| output: true
 
 klywind <- read_csv("./data/metmast_01_21-months.csv", show_col_types = FALSE)
 
@@ -87,7 +86,9 @@ klywind |>
     colnames()
 ```
 
-Abbreviations indicate the following:
+`Speed120msyn`, `Speed110msyn` and `WS120mCompFILLED120mSyn` seem to be created.
+
+Abbreviations of the original sensor data indicate the following:
 
 - WS: Wind Speed [m/s]
 - PR: Pressure [mbar]
@@ -99,49 +100,35 @@ Abbreviations indicate the following:
 
 ```{r}
 #| label: missing_values
+#| echo: false
+#| warning: false
+#| output: true
 
 klywind |>
     count_na() |>
     knitr::kable()
 ```
 
-Mastils of wind turbines are 100 metres high. However, at that altitude there are a lot of missing values for Wind Speed.
+Only `WS120mCompFILLED120mSyn` is complete, which makes sense given its name.
 
-Let's build a model to fill NAs of `F3_WS_100_A_330_TFCA`
+Mastils of wind turbines are 100 metres high. However, with a rotor diameter of 165 metres the total height from blade tip is 182.92 metres.
+
+The minimum distance from tip to ground would be $100 - 82.5 = 17.5 m$
+
+This means that the best measurement of wind speed for the total **air parcel** is the Avg. of all sensors installed at different heights.
 
 ```{r}
-
-klywind |>
-    ggplot(aes(x = F3_WS_100_A_330_TFCA, y = F6_WS_60_B_150_TFCA)) +
-    geom_point()
-
-klywind_ws <- klywind |> 
-    select( 
-    datetime | 
-    contains("WS") & 
-    !contains("Min") & 
-    !contains("Max") &
-    !contains("STDev") &
-    !contains("TI30")) |> 
-    remove_missing() 
-    
-    
-klywind_ws |>
-    select(-datetime)|>
-    cor(method = "pearson") |>
-    corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
+#| label: ts_plots
+#| echo: false
+#| warning: false
+#| output: true
+#| fig-width: 7
+#| fig-height: 10
 
 
-klywind_ws |>
-    select(-datetime) |>
-    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
-    mutate(WS_sensor = as.factor(WS_sensor)) |>
-    ggplot(aes(x = WindSpeed)) +
-    geom_histogram(bins = 50, color = "lightgrey", fill = "lightgrey") + 
-    labs(x = "Wind Speed [m/s]") +
-    scale_x_continuous(breaks = seq(0, 35, 5)) +  
-    facet_wrap(~WS_sensor)
-    
+# fig-column: page-right
+
+# Wind Speed
 klywind |> 
     select(datetime | contains("WS") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("WS"), names_to = "WS_sensor", values_to = "WindSpeed") |>
@@ -149,23 +136,74 @@ klywind |>
     ggplot(aes(x=datetime)) +
     geom_line(aes(y=WindSpeed)) +     
     scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
     facet_wrap(~WS_sensor, ncol = 1) 
-```
 
+# Wind Direction
+klywind |> 
+    select(datetime | contains("WD") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
+    pivot_longer(cols = contains("WD"), names_to = "WD_sensor", values_to = "WindDirection") |>
+    mutate(WD_sensor = as.factor(WD_sensor)) |>
+    ggplot(aes(x=datetime)) +
+    geom_line(aes(y=WindDirection)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "Wind\nDirection\n[Deg.]", x = "Time" ) +
+    facet_wrap(~WD_sensor, ncol = 1) 
 
-therefore I will select the columns with measurements taken around 100 m.
-There are 24 variables + timestamp remaining in the dataset.
+# Temperature
+klywind |> 
+    select(datetime | contains("TEM") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
+    pivot_longer(cols = contains("TEM"), names_to = "TEM_sensor", values_to = "Temperature") |>
+    mutate(TEM_sensor = as.factor(TEM_sensor)) |>
+    ggplot(aes(x=datetime)) +
+    geom_line(aes(y=Temperature)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "Temperature\n[degC]", x = "Time" ) +
+    facet_wrap(~TEM_sensor, ncol = 1) 
 
-```{r}
-#| label: columns-filter
+# Pressure
+klywind |> 
+    select(datetime | contains("PR") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
+    pivot_longer(cols = contains("PR"), names_to = "PR_sensor", values_to = "Pressure") |>
+    mutate(PR_sensor = as.factor(PR_sensor)) |>
+    ggplot(aes(x=datetime)) +
+    geom_line(aes(y=Pressure)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "Pressure\n[mbar]", x = "Time" ) +
+    facet_wrap(~PR_sensor, ncol = 1) 
 
+# Relative Humidity
+klywind |> 
+    select(datetime | contains("RH") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
+    pivot_longer(cols = contains("RH"), names_to = "RH_sensor", values_to = "rh") |>
+    mutate(RH_sensor = as.factor(RH_sensor)) |>
+    ggplot(aes(x=datetime)) +
+    geom_line(aes(y=rh)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "RH\n[%]", x = "Time" ) +
+    facet_wrap(~RH_sensor, ncol = 1) 
 
-klywind <- 
-    klywind |>
-    select(contains ("datetime") | contains("100") | contains("97") | contains("115") | contains("PR"))
+# klywind_ws <- klywind |> 
+#     select( 
+#     datetime | 
+#     contains("WS") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
+#     remove_missing() 
     
-klywind |>
-    colnames()
+# klywind_ws |>
+#     select(-datetime)|>
+#     cor(method = "pearson") |>
+#     corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
+
+
+# klywind_ws |>
+#     select(-datetime) |>
+#     pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
+#     mutate(WS_sensor = as.factor(WS_sensor)) |>
+#     ggplot(aes(x = WindSpeed)) +
+#     geom_histogram(bins = 50, color = "lightgrey", fill = "lightgrey") + 
+#     labs(x = "Wind Speed [m/s]") +
+#     scale_x_continuous(breaks = seq(0, 35, 5)) +  
+#     facet_wrap(~WS_sensor)  
 
 ```
 
@@ -177,8 +215,9 @@ It's important to keep all units within the **SI**, therefore I will convert the
 
 ```{r}
 #| label: units
-#| include: false
-#| eval: true
+#| echo: false
+#| warning: false
+#| output: true
 
 # Convert units to SI
 
@@ -218,13 +257,6 @@ https://en.wikipedia.org/wiki/Tetens_equation
 
 ${p_{sat} = 6.1078\times \exp({\frac {17.5T}{T+237.3}})}$
 
-
-```{r}
-
-
-
-```
-
 where temperature $T$ is in degrees Celsius (°C) and saturation vapor pressure $p_{sat}$ is in kilopascals (kPa). 
 
 The partial pressure of dry air 
@@ -236,7 +268,6 @@ ${p_{d}=p-p_{v}}$
 where 
 
 $p$ simply denotes the observed absolute pressure.
-
 
 
 
