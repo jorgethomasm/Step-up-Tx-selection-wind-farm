@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Jorge Thomas">
-<meta name="dcterms.date" content="2023-12-11">
+<meta name="dcterms.date" content="2023-12-12">
 
 <title>Kalayaan 2: Selection of Step-up Transformers - Project Kalayaan 2 - 100 MW Wind Farm</title>
 <style>
@@ -20,6 +20,40 @@ ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
 width: 0.8em;
 margin: 0 0.8em 0.2em -1em;  vertical-align: middle;
+}
+
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+}
+pre.numberSource { margin-left: 3em; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -4579,7 +4613,7 @@ return!"\t\n\x0B\f\r                　\u2028\u2029
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">December 11, 2023</p>
+      <p class="date">December 12, 2023</p>
     </div>
   </div>
   
@@ -4666,10 +4700,56 @@ return!"\t\n\x0B\f\r                　\u2028\u2029
 <p><span class="math inline">\(p_{sat}\)</span>, saturation vapor pressure</p>
 <p>Tetens equation to calculate the saturation vapour pressure of water over liquid https://en.wikipedia.org/wiki/Tetens_equation</p>
 <p><span class="math inline">\({p_{sat} = 6.1078\times \exp({\frac {17.5T}{T+237.3}})}\)</span></p>
+<div class="cell">
+<details>
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; Calculate </span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; @param air_temperature vector of air temperatures in [Deg. Celsius]</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; @return saturation pressure of water vapor in [mbar]</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; @examples p_sat &lt;- calc_water_vapor_pressure(Temperature)</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>calc_water_vapor_pressure <span class="ot">&lt;-</span> <span class="cf">function</span>(air_temperature) {    </span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    tem <span class="ot">=</span> air_temperature   </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    ES0 <span class="ot">=</span> <span class="fl">6.1078</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    c0 <span class="ot">=</span> <span class="fl">0.99999683</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    c1 <span class="ot">=</span> <span class="sc">-</span><span class="fl">0.90826951e-2</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    c2 <span class="ot">=</span> <span class="fl">0.78736169e-4</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    c3 <span class="ot">=</span> <span class="sc">-</span><span class="fl">0.61117958e-6</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    c4 <span class="ot">=</span> <span class="fl">0.43884187e-8</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    c5 <span class="ot">=</span> <span class="sc">-</span><span class="fl">0.29883885e-10</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    c6 <span class="ot">=</span> <span class="fl">0.21874425e-12</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    c7 <span class="ot">=</span> <span class="sc">-</span><span class="fl">0.17892321e-14</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    c8 <span class="ot">=</span> <span class="fl">0.11112018e-16</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    c9 <span class="ot">=</span> <span class="sc">-</span><span class="fl">0.30994571e-19</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Herman Wobus polynomial</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># https://wahiduddin.net/calc/density_altitude.htm</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    pol <span class="ot">&lt;-</span> c0<span class="sc">+</span>tem<span class="sc">*</span>(c1<span class="sc">+</span>tem<span class="sc">*</span>(c2<span class="sc">+</span>tem<span class="sc">*</span>(c3<span class="sc">+</span>tem<span class="sc">*</span>(c4<span class="sc">+</span>tem<span class="sc">*</span>(c5<span class="sc">+</span>tem<span class="sc">*</span>(c6<span class="sc">+</span>tem<span class="sc">*</span>(c7<span class="sc">+</span>tem<span class="sc">*</span>(c8<span class="sc">+</span>tem<span class="sc">*</span>(c9)))))))))</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    Es <span class="ot">&lt;-</span> ES0<span class="sc">/</span>pol<span class="sc">**</span><span class="dv">8</span> <span class="co"># [hpas] = [mbar]</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Approx.Tetens Eq. [mbar]</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Es = ES0*10**((7.5*tem)/(237.3+tem)) </span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    Es</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a><span class="fu">calc_water_vapor_pressure</span>(<span class="dv">30</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 42.42976</code></pre>
+</div>
+</div>
 <p>where temperature <span class="math inline">\(T\)</span> is in degrees Celsius (°C) and saturation vapor pressure <span class="math inline">\(p_{sat}\)</span> is in kilopascals (kPa).</p>
 <p>The partial pressure of dry air</p>
 <p><span class="math inline">\({p_{d}}\)</span> is found considering partial pressure, resulting in:</p>
-<p><span class="math inline">\({\displaystyle p_{\text{d}}=p-p_{\text{v}}}\)</span></p>
+<p><span class="math inline">\({p_{d}=p-p_{v}}\)</span></p>
 <p>where</p>
 <p><span class="math inline">\(p\)</span> simply denotes the observed absolute pressure.</p>
 <section id="wind-turbine-output-power" class="level2">

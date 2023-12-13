@@ -8,6 +8,7 @@ data/
 imgs/
 models/
 specs/
-tools/jthomfuncs.r
+bibliography/
+tools/
 
 /.quarto/
