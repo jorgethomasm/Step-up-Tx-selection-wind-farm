@@ -16,10 +16,9 @@ bibliography: references.bib
 ---
 
 ::: {#fig-intro layout-ncol="1"}
-
 ![Credit: Siemens Gamesa](./imgs/Balaoi-Caunayan-Wind-Farm.webp){width="100%"}
 
- The Balaoi & Caunayan Wind Farm is an 160 MW onshore project located in the province of Ilocos Norte, Philippines.
+The Balaoi & Caunayan Wind Farm is an 160 MW onshore project located in the province of Ilocos Norte, Philippines.
 :::
 
 ```{r}
@@ -90,11 +89,11 @@ klywind |>
 
 Abbreviations of the original sensor data indicate the following:
 
-- WS: Wind Speed [m/s]
-- PR: Pressure [mbar]
-- WD: Wind Direction [°]
-- RH: Relative Humidity [%]
-- TEM: Ambient Temperature [°C]
+-   WS: Wind Speed \[m/s\]
+-   PR: Pressure \[mbar\]
+-   WD: Wind Direction \[°\]
+-   RH: Relative Humidity \[%\]
+-   TEM: Ambient Temperature \[°C\]
 
 ## Check Data Integrity: Missing Values
 
@@ -111,24 +110,24 @@ klywind |>
 
 Only `WS120mCompFILLED120mSyn` is complete, which makes sense given its name.
 
+If calculations are done at 120 metres, the theoretical wind power output will be overestimated!
+
 Mastils of wind turbines are 100 metres high. However, with a rotor diameter of 165 metres the total height from blade tip is 182.92 metres.
 
 The minimum distance from tip to ground would be $100 - 82.5 = 17.5 m$
 
 This means that the best measurement of wind speed for the total **air parcel** is the Avg. of all sensors installed at different heights.
 
+### Wind Speed - Raw Data
+
 ```{r}
-#| label: ts_plots
+#| label: raw_plot_ws
 #| echo: false
 #| warning: false
 #| output: true
-#| fig-width: 7
-#| fig-height: 10
+#| fig-width: 6
+#| fig-height: 6
 
-
-# fig-column: page-right
-
-# Wind Speed
 klywind |> 
     select(datetime | contains("WS") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("WS"), names_to = "WS_sensor", values_to = "WindSpeed") |>
@@ -138,8 +137,18 @@ klywind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
     facet_wrap(~WS_sensor, ncol = 1) 
+```
 
-# Wind Direction
+### Wind Direction - Raw Data
+
+```{r}
+#| label: ts_plots
+#| echo: false
+#| warning: false
+#| output: true
+#| fig-width: 6
+#| fig-height: 6
+
 klywind |> 
     select(datetime | contains("WD") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("WD"), names_to = "WD_sensor", values_to = "WindDirection") |>
@@ -149,8 +158,18 @@ klywind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nDirection\n[Deg.]", x = "Time" ) +
     facet_wrap(~WD_sensor, ncol = 1) 
+```
 
-# Temperature
+### Temperature - Raw Data
+
+```{r}
+#| label: ts_plots
+#| echo: false
+#| warning: false
+#| output: true
+#| fig-width: 6
+#| fig-height: 6
+
 klywind |> 
     select(datetime | contains("TEM") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("TEM"), names_to = "TEM_sensor", values_to = "Temperature") |>
@@ -158,10 +177,21 @@ klywind |>
     ggplot(aes(x=datetime)) +
     geom_line(aes(y=Temperature)) +     
     scale_x_datetime(date_labels = "%b-%Y") + 
-    labs(y = "Temperature\n[degC]", x = "Time" ) +
+    labs(y = "Temp\n[degC]", x = "Time" ) +
     facet_wrap(~TEM_sensor, ncol = 1) 
 
-# Pressure
+```
+
+### Pressure - Raw Data
+
+```{r}
+#| label: ts_plots
+#| echo: false
+#| warning: false
+#| output: true
+#| fig-width: 6
+#| fig-height: 6
+
 klywind |> 
     select(datetime | contains("PR") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("PR"), names_to = "PR_sensor", values_to = "Pressure") |>
@@ -171,8 +201,18 @@ klywind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Pressure\n[mbar]", x = "Time" ) +
     facet_wrap(~PR_sensor, ncol = 1) 
+```
 
-# Relative Humidity
+### Relative Humidity - Raw Data
+
+```{r}
+#| label: ts_plots
+#| echo: false
+#| warning: false
+#| output: true
+#| fig-width: 6
+#| fig-height: 6
+
 klywind |> 
     select(datetime | contains("RH") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("RH"), names_to = "RH_sensor", values_to = "rh") |>
@@ -182,13 +222,122 @@ klywind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "RH\n[%]", x = "Time" ) +
     facet_wrap(~RH_sensor, ncol = 1) 
+```
 
-# klywind_ws <- klywind |> 
-#     select( 
-#     datetime | 
-#     contains("WS") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
-#     remove_missing() 
-    
+```{r}
+#| label: model_fill_missing 
+
+windspeed <- 
+    klywind |> 
+    select(contains("WS") & !contains(c("Min", "Max", "STDev", "TI30", "Syn"))) |> 
+    remove_missing() |>
+    mutate(ws_120 = (F1_WS_120_A_330_TFCA + F2_WS_120_B_150_TFCA)/2, .keep = "unused") |> 
+    mutate(ws_100 = (F3_WS_100_A_330_TFCA + F4_WS_100_B_150_TFCA)/2, .keep = "unused") |> 
+    mutate(ws_60 = (F5_WS_60_A_330_TFCA + F6_WS_60_B_150_TFCA)/2, .keep = "unused") 
+
+
+windspeed |>    
+    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
+    mutate(WS_sensor = as.factor(WS_sensor)) |>
+    ggplot(aes(x = WindSpeed)) +
+    geom_histogram(bins = 50, color = "grey", fill = "lightgrey", alpha = 0.5) + 
+    labs(x = "Wind Speed [m/s]") +
+    scale_x_continuous(breaks = seq(0, 35, 5)) +  
+    facet_wrap(~WS_sensor)  
+
+# Box-Cox Transformation
+
+bc_ws_60 <- MASS::boxcox(lm(ws_60 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
+bc_lambda_ws_60 <- as.numeric(bc_ws_60$x[which.max(bc_ws_60$y)])
+
+bc_ws_100 <- MASS::boxcox(lm(ws_100 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
+bc_lambda_ws_100 <- as.numeric(bc_ws_100$x[which.max(bc_ws_100$y)])
+
+bc_ws_120 <- MASS::boxcox(lm(ws_120 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
+bc_lambda_ws_120 <- as.numeric(bc_ws_120$x[which.max(bc_ws_120$y)])
+
+# New transformed response variables
+windspeed <- windspeed |>
+  mutate(ws_60_bc = (ws_60^bc_lambda_ws_60 - 1) / bc_lambda_ws_60) |>
+  mutate(ws_100_bc = (ws_100^bc_lambda_ws_100 - 1) / bc_lambda_ws_100) |>
+  mutate(ws_120_bc = (ws_120^bc_lambda_ws_120 - 1) / bc_lambda_ws_120)
+
+windspeed |>    
+    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
+    mutate(WS_sensor = as.factor(WS_sensor)) |>
+    ggplot(aes(x = WindSpeed)) +
+    geom_histogram(bins = 50, color = "grey", fill = "lightgrey", alpha = 0.5) + 
+    labs(x = "Wind Speed [m/s]") +
+    scale_x_continuous(breaks = seq(0, 35, 5)) +  
+    facet_wrap(~WS_sensor) 
+
+
+
+# The Bootstrap: for assessment of test error ----
+set.seed(1982)
+windspeed_boots <- bootstraps(ames_train, times = 1000, strata = SalePrice_bc)
+windspeed_boots  
+
+
+# Elastic Net
+glmnet_rec <-
+  recipe(SalePrice_bc ~ ., data = ames_train) |>
+  update_role(Id, new_role = "Id variable") |>
+  update_role(SalePrice, new_role = "original outcome") |>
+  update_role(dataset, new_role = "splitting variable") |>
+  step_lencode_glm(MSSubClass, outcome = vars(SalePrice_bc)) |>
+  step_dummy(all_nominal_predictors()) |>    
+  step_YeoJohnson(all_numeric_predictors()) |>
+  step_zv(all_predictors()) |> 
+  step_normalize(all_numeric_predictors())
+  
+# glmnet_rec |> prep() |> bake(new_data = NULL) 
+
+# library(usemodels)  # CheatSheets
+
+# Model: Elastic Net -------------
+glmnet_spec <-
+  linear_reg(penalty = tune(), mixture = tune()) |> 
+  set_engine("glmnet") |>
+  set_mode("regression")  
+
+glmnet_wf <-
+  workflow() |>
+  add_recipe(glmnet_rec) |>
+  add_model(glmnet_spec)
+
+# penalty = lambda; mixture = alpha (0 - Ridge, 1- Lasso)
+
+# penalty_ <- 10^seq(-4, -1, length.out = 20)
+# mixture_ = c(0.05, 0.2, 0.4, 0.6, 0.8, 1)
+penalty_elnet <- 10^seq(-3, -2, length.out = 40)
+mixture_elnet <- c(0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6)
+
+glmnet_grid <- tidyr::crossing(penalty = penalty_elnet, 
+                               mixture = mixture_elnet)
+
+# Tune with Folds
+
+tic("opt-ElasticNet")
+set.seed(1982)
+doParallel::registerDoParallel()
+
+glmnet_tune <- tune_grid(glmnet_wf, 
+                         resamples = ames_folds,  # CV is faster!
+                         grid = glmnet_grid)
+
+toc()
+
+# Explore Results 
+show_best(glmnet_tune, metric = "rmse")
+
+# Set best parameters
+final_glmnet <- glmnet_wf |> finalize_workflow(select_best(glmnet_tune, metric = "rmse"))
+final_glmnet
+
+
+
+
 # klywind_ws |>
 #     select(-datetime)|>
 #     cor(method = "pearson") |>
@@ -205,13 +354,14 @@ klywind |>
 #     scale_x_continuous(breaks = seq(0, 35, 5)) +  
 #     facet_wrap(~WS_sensor)  
 
-```
 
+
+```
 
 It's important to keep all units within the **SI**, therefore I will convert the following units:
 
-- PR: Pressure [mbar] --> [Pa]
-- TEM: Ambient Temperature [°C] --> [K]
+-   PR: Pressure \[mbar\] --\> \[Pa\]
+-   TEM: Ambient Temperature \[°C\] --\> \[K\]
 
 ```{r}
 #| label: units
@@ -232,13 +382,11 @@ klywind |>
 
 ```
 
-
 **Temperature** $(T)$, **pressure** $(p)$ and **relative humidity** $(\phi)$ are important to calculate the **humid air density**[^1] $(\rho_h)$, which affects the output power $P_{out}$ of wind turbines; lower density means lower power output.
 
 [^1]: The more water vapour in the air, the less is its total density; this seems counter-intuitive.
 
 ${\rho_h={\frac{p_d}{R_{d}T}} + {\frac{p_v}{R_{v}T}}={\frac {p_{\text{d}}M_d+p_{v}M_{v}}{RT}}}$
-
 
 R, universal gas constant, 8.31446 J/(K·mol)
 
@@ -252,24 +400,21 @@ $\phi$, relative humidity (0.0–1.0)
 
 $p_{sat}$, saturation vapor pressure
 
-Tetens equation to calculate the saturation vapour pressure of water over liquid
-https://en.wikipedia.org/wiki/Tetens_equation
+Tetens equation to calculate the saturation vapour pressure of water over liquid https://en.wikipedia.org/wiki/Tetens_equation
 
 ${p_{sat} = 6.1078\times \exp({\frac {17.5T}{T+237.3}})}$
 
-where temperature $T$ is in degrees Celsius (°C) and saturation vapor pressure $p_{sat}$ is in kilopascals (kPa). 
+where temperature $T$ is in degrees Celsius (°C) and saturation vapor pressure $p_{sat}$ is in kilopascals (kPa).
 
-The partial pressure of dry air 
+The partial pressure of dry air
 
 ${p_{d}}$ is found considering partial pressure, resulting in:
 
 ${p_{d}=p-p_{v}}$
 
-where 
+where
 
 $p$ simply denotes the observed absolute pressure.
-
-
 
 ## Wind Turbine Output Power
 
