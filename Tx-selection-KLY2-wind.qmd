@@ -131,8 +131,8 @@ klywind |>
     select(datetime | contains("WS") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
     pivot_longer(cols = contains("WS"), names_to = "WS_sensor", values_to = "WindSpeed") |>
     mutate(WS_sensor = as.factor(WS_sensor)) |>
-    ggplot(aes(x=datetime)) +
-    geom_line(aes(y=WindSpeed)) +     
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = WindSpeed)) +     
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
     facet_wrap(~WS_sensor, ncol = 1)
@@ -242,31 +242,29 @@ ws |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
     facet_wrap(~WS_sensor, ncol = 1)
+```
 
-ws_train <- ws |> remove_missing()
-   
-    
-    
-
-
-# Histograms
-
-ws_train |>  
-    select(-datetime) |>
-    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "ws") |>
-    mutate(WS_sensor = factor(WS_sensor, levels = c("ws_060", "ws_100", "ws_120"))) |>
-    ggplot(aes(x = ws)) +
-    geom_histogram(bins = 50, color = "grey", fill = "lightgrey", alpha = 0.5) + 
-    labs(x = "Wind Speed [m/s]") +
-    scale_x_continuous(breaks = seq(0, 35, 5)) +  
-    facet_wrap(~WS_sensor)  
+```{r}
+#| label: ws_filling_models
 
 # Box-Cox Transformation
 
-ws_train$ws_060_bc <- calc_boxcox_trans(x = ws_train$ws_060)
-ws_train$ws_100_bc <- calc_boxcox_trans(x = ws_train$ws_100)
-ws_train$ws_120_bc <- calc_boxcox_trans(x = ws_train$ws_120)
+ws_060_bc_results <- calc_boxcox_trans(ws$ws_060)
+ws$ws_060_bc <- ws_060_bc_results$x_bc
 
+ws_100_bc_results <- calc_boxcox_trans(ws$ws_100)
+ws$ws_100_bc <- ws_100_bc_results$x_bc
+
+ws_120_bc_results <- calc_boxcox_trans(ws$ws_120)
+ws$ws_120_bc <- ws_120_bc_results$x_bc
+
+
+ws_060_test_1 <- ws[which(is.na(ws$ws_060) & !is.na(ws$ws_100) & !is.na(ws$ws_120)), ]
+
+# TRAIN / TEST (PRED) SPLIT
+ws_train <- ws |> remove_missing()
+
+# Histograms
 ws_train |>   
     select(-datetime) |>
     pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
@@ -277,36 +275,37 @@ ws_train |>
     scale_x_continuous(breaks = seq(0, 35, 5)) +  
     facet_wrap(~WS_sensor, nrow = 2) 
 
-ws_train_bc <-
-    ws_train |>
-    select(datetime | contains("bc"))
-
 # The Bootstrap: for assessment of test error ----
 set.seed(1982)
-ws_train_boots_060 <- bootstraps(ws_train_bc, times = 1000, strata = ws_60_bc)
+ws_train_boots_060 <- bootstraps(ws_train, times = 1000, strata = ws_060_bc)
 
 set.seed(1982)
-ws_train_boots_100 <- bootstraps(ws_train_bc, times = 1000, strata = ws_100_bc)
+ws_train_boots_100 <- bootstraps(ws_train, times = 1000, strata = ws_100_bc)
 
 set.seed(1982)
-ws_train_boots_120 <- bootstraps(ws_train_bc, times = 1000, strata = ws_120_bc)
-
-idx_ws_060_na <- which(is.na(ws$ws_060))
-idx_ws_100_na <- which(is.na(ws$ws_100))
-idx_ws_120_na <- which(is.na(ws$ws_120))
+ws_train_boots_120 <- bootstraps(ws_train, times = 1000, strata = ws_120_bc)
 
 # lm Recipes:
 lm_rec_ws060 <-
-  recipe(ws_060_bc ~ ., data = ws_train_bc) |>
-  update_role(datetime, new_role = "timestamp")
+  recipe(ws_060_bc ~ ., data = ws_train) |>
+  update_role(datetime, new_role = "timestamp") |>
+  update_role(ws_060, new_role = "orignal") |>
+  update_role(ws_100, new_role = "orignal") |>
+  update_role(ws_120, new_role = "orignal")
   
 lm_rec_ws100 <-
-  recipe(ws_100_bc ~ ., data = ws_train_bc) |>
-  update_role(datetime, new_role = "timestamp")
+  recipe(ws_100_bc ~ ., data = ws_train) |>
+  update_role(datetime, new_role = "timestamp") |>
+  update_role(ws_060, new_role = "orignal") |>
+  update_role(ws_100, new_role = "orignal") |>
+  update_role(ws_120, new_role = "orignal")
 
 lm_rec_ws120 <-
-  recipe(ws_120_bc ~ ., data = ws_train_bc) |>
-  update_role(datetime, new_role = "timestamp")
+  recipe(ws_120_bc ~ ., data = ws_train) |>
+  update_role(datetime, new_role = "timestamp") |>
+  update_role(ws_060, new_role = "orignal") |>
+  update_role(ws_100, new_role = "orignal") |>
+  update_role(ws_120, new_role = "orignal")
 
 # Model Spec: LM -------------
 lm_spec <-
@@ -324,42 +323,55 @@ lm_wf_ws120 <- workflow() |> add_recipe(lm_rec_ws120) |> add_model(lm_spec)
 tic()
 set.seed(1982)
 doParallel::registerDoParallel()
-lm_fit_ws060 <- fit_resamples(lm_wf_ws060, resamples = ws_train_boots)
+lm_testing_fit_ws060 <- fit_resamples(lm_wf_ws060, resamples = ws_train_boots)
 toc()
-lm_fit_ws060 |> collect_metrics(summarize = TRUE)
+lm_testing_fit_ws060 |> collect_metrics(summarize = TRUE)
 
 # ------ WS 100 Metres ------
 tic()
 set.seed(1982)
 doParallel::registerDoParallel()
-lm_fit_ws100 <- fit_resamples(lm_wf_ws100, resamples = ws_train_boots)
+lm_testing_fit_ws100 <- fit_resamples(lm_wf_ws100, resamples = ws_train_boots)
 toc()
-lm_fit_ws100 |> collect_metrics(summarize = TRUE)
+lm_testing_fit_ws100 |> collect_metrics(summarize = TRUE)
 
 # ------ WS 120 Metres ------
 tic()
 set.seed(1982)
 doParallel::registerDoParallel()
-lm_fit_ws120 <- fit_resamples(lm_wf_ws120, resamples = ws_train_boots)
+lm_testing_fit_ws120 <- fit_resamples(lm_wf_ws120, resamples = ws_train_boots)
 toc()
-lm_fit_ws120 |> collect_metrics(summarize = TRUE)
+lm_testing_fit_ws120 |> collect_metrics(summarize = TRUE)
 
-# Final Fits 
-# fit_glm_elnet <- 
-#   final_glmnet |>
-#   fit(ames_train)
+# === FINAL FITS ===
 
-
+lm_fit_ws060 <- lm_wf_ws060 |> fit(ws_train)
+lm_fit_ws100 <- lm_wf_ws100 |> fit(ws_train)
+lm_fit_ws120 <- lm_wf_ws120 |> fit(ws_train)
 
 # Add predictions
 
-ws$ws_060_pred <- predict(lm_fit_ws060)
-ws$ws_100_pred <- predict(lm_fit_ws100)
-ws$ws_120_pred <- predict(lm_fit_ws120)
 
+ws_060_test_2 <- ws[which(is.na(ws$ws_060) & !is.na(ws$ws_120)), ]
 
+ws_100_test <- ws[which(is.na(ws$ws_100)), ]
+ws_120_test <- ws[which(is.na(ws$ws_120)), ]
+
+ws_060_pred <- inv_boxcox(predict(lm_fit_ws060, ws_train), ws_060_bc_results$lambda)
+
+ws <-
+  ws |>
+  predict(lm_fit_ws100, ws_train_bc) |>
+  mutate(ws_100_pred = inv_boxcox(.pred, ws_100_bc_results$lambda), .keep = "all")
+
+ws <-
+  ws |>
+  predict(lm_fit_ws120, ws_train_bc) |>
+  mutate(ws_120_pred = inv_boxcox(.pred, ws_120_bc_results$lambda), .keep = "all")
 
 glimpse(ws)
+
+
 
 
 # klywind_ws |>
@@ -381,7 +393,6 @@ glimpse(ws)
     # mutate(ws_120 = (F1_WS_120_A_330_TFCA + F2_WS_120_B_150_TFCA)/2, .keep = "unused") |> 
     # mutate(ws_100 = (F3_WS_100_A_330_TFCA + F4_WS_100_B_150_TFCA)/2, .keep = "unused") |> 
     # mutate(ws_60 = (F5_WS_60_A_330_TFCA + F6_WS_60_B_150_TFCA)/2, .keep = "unused") 
-
 ```
 
 It's important to keep all units within the **SI**, therefore I will convert the following units:
