@@ -10,8 +10,8 @@ format:
       df-print: tibble
       code-summary: "Show the code"
       grid: 
-        margin-width: 400px
-reference-location: section 
+        margin-width: 350px
+reference-location: margin 
 bibliography: references.bib
 ---
 
@@ -27,6 +27,7 @@ The Balaoi & Caunayan Wind Farm is an 160 MW onshore project located in the prov
 #| warning: false
 
 # library(convertr) # https://cran.r-project.org/web/packages/convertr/convertr.pdf
+library(tictoc)
 library(tidyverse)
 library(corrplot)
 
@@ -56,8 +57,6 @@ wt_ws_cut_in <- 3 # m/s
 wt_ws_cut_out <- 24 # m/s
 
 v_tan <- 92 # m/s For TSR (Tip-Speed Ratio, lambda) calc.
-
-
 ```
 
 # On-Site Wind Profile
@@ -136,7 +135,7 @@ klywind |>
     geom_line(aes(y=WindSpeed)) +     
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
-    facet_wrap(~WS_sensor, ncol = 1) 
+    facet_wrap(~WS_sensor, ncol = 1)
 ```
 
 ### Wind Direction - Raw Data
@@ -227,19 +226,36 @@ klywind |>
 ```{r}
 #| label: model_fill_missing 
 
-windspeed <- 
+ws <- 
     klywind |> 
-    select(contains("WS") & !contains(c("Min", "Max", "STDev", "TI30", "Syn"))) |> 
-    remove_missing() |>
-    mutate(ws_120 = (F1_WS_120_A_330_TFCA + F2_WS_120_B_150_TFCA)/2, .keep = "unused") |> 
-    mutate(ws_100 = (F3_WS_100_A_330_TFCA + F4_WS_100_B_150_TFCA)/2, .keep = "unused") |> 
-    mutate(ws_60 = (F5_WS_60_A_330_TFCA + F6_WS_60_B_150_TFCA)/2, .keep = "unused") 
+    select(datetime | contains("WS") & !contains(c("Min", "Max", "STDev", "TI30", "Syn"))) |>
+    mutate(ws_120 = coalesce(F1_WS_120_A_330_TFCA, F2_WS_120_B_150_TFCA), .keep = "unused") |> 
+    mutate(ws_100 = coalesce(F3_WS_100_A_330_TFCA, F4_WS_100_B_150_TFCA), .keep = "unused") |> 
+    mutate(ws_060 = coalesce(F5_WS_60_A_330_TFCA, F6_WS_60_B_150_TFCA), .keep = "unused") 
+
+# Plot
+ws |>     
+    pivot_longer(cols = contains("ws"), names_to = "WS_sensor", values_to = "WindSpeed") |>
+    mutate(WS_sensor = factor(WS_sensor, levels = c("ws_120", "ws_100", "ws_060"))) |>
+    ggplot(aes(x=datetime)) +
+    geom_line(aes(y=WindSpeed)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
+    facet_wrap(~WS_sensor, ncol = 1)
+
+ws_train <- ws |> remove_missing()
+   
+    
+    
 
 
-windspeed |>    
-    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
-    mutate(WS_sensor = as.factor(WS_sensor)) |>
-    ggplot(aes(x = WindSpeed)) +
+# Histograms
+
+ws_train |>  
+    select(-datetime) |>
+    pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "ws") |>
+    mutate(WS_sensor = factor(WS_sensor, levels = c("ws_060", "ws_100", "ws_120"))) |>
+    ggplot(aes(x = ws)) +
     geom_histogram(bins = 50, color = "grey", fill = "lightgrey", alpha = 0.5) + 
     labs(x = "Wind Speed [m/s]") +
     scale_x_continuous(breaks = seq(0, 35, 5)) +  
@@ -247,95 +263,103 @@ windspeed |>
 
 # Box-Cox Transformation
 
-bc_ws_60 <- MASS::boxcox(lm(ws_60 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
-bc_lambda_ws_60 <- as.numeric(bc_ws_60$x[which.max(bc_ws_60$y)])
+ws_train$ws_060_bc <- calc_boxcox_trans(x = ws_train$ws_060)
+ws_train$ws_100_bc <- calc_boxcox_trans(x = ws_train$ws_100)
+ws_train$ws_120_bc <- calc_boxcox_trans(x = ws_train$ws_120)
 
-bc_ws_100 <- MASS::boxcox(lm(ws_100 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
-bc_lambda_ws_100 <- as.numeric(bc_ws_100$x[which.max(bc_ws_100$y)])
-
-bc_ws_120 <- MASS::boxcox(lm(ws_120 ~ 1, data = windspeed), lambda = seq(-2, 2), plotit = TRUE)
-bc_lambda_ws_120 <- as.numeric(bc_ws_120$x[which.max(bc_ws_120$y)])
-
-# New transformed response variables
-windspeed <- windspeed |>
-  mutate(ws_60_bc = (ws_60^bc_lambda_ws_60 - 1) / bc_lambda_ws_60) |>
-  mutate(ws_100_bc = (ws_100^bc_lambda_ws_100 - 1) / bc_lambda_ws_100) |>
-  mutate(ws_120_bc = (ws_120^bc_lambda_ws_120 - 1) / bc_lambda_ws_120)
-
-windspeed |>    
+ws_train |>   
+    select(-datetime) |>
     pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
-    mutate(WS_sensor = as.factor(WS_sensor)) |>
+    mutate(WS_sensor = factor(WS_sensor, levels = c("ws_060", "ws_100", "ws_120", "ws_060_bc", "ws_100_bc", "ws_120_bc"))) |>
     ggplot(aes(x = WindSpeed)) +
     geom_histogram(bins = 50, color = "grey", fill = "lightgrey", alpha = 0.5) + 
     labs(x = "Wind Speed [m/s]") +
     scale_x_continuous(breaks = seq(0, 35, 5)) +  
-    facet_wrap(~WS_sensor) 
+    facet_wrap(~WS_sensor, nrow = 2) 
 
-
+ws_train_bc <-
+    ws_train |>
+    select(datetime | contains("bc"))
 
 # The Bootstrap: for assessment of test error ----
 set.seed(1982)
-windspeed_boots <- bootstraps(ames_train, times = 1000, strata = SalePrice_bc)
-windspeed_boots  
+ws_train_boots_060 <- bootstraps(ws_train_bc, times = 1000, strata = ws_60_bc)
 
+set.seed(1982)
+ws_train_boots_100 <- bootstraps(ws_train_bc, times = 1000, strata = ws_100_bc)
 
-# Elastic Net
-glmnet_rec <-
-  recipe(SalePrice_bc ~ ., data = ames_train) |>
-  update_role(Id, new_role = "Id variable") |>
-  update_role(SalePrice, new_role = "original outcome") |>
-  update_role(dataset, new_role = "splitting variable") |>
-  step_lencode_glm(MSSubClass, outcome = vars(SalePrice_bc)) |>
-  step_dummy(all_nominal_predictors()) |>    
-  step_YeoJohnson(all_numeric_predictors()) |>
-  step_zv(all_predictors()) |> 
-  step_normalize(all_numeric_predictors())
+set.seed(1982)
+ws_train_boots_120 <- bootstraps(ws_train_bc, times = 1000, strata = ws_120_bc)
+
+idx_ws_060_na <- which(is.na(ws$ws_060))
+idx_ws_100_na <- which(is.na(ws$ws_100))
+idx_ws_120_na <- which(is.na(ws$ws_120))
+
+# lm Recipes:
+lm_rec_ws060 <-
+  recipe(ws_060_bc ~ ., data = ws_train_bc) |>
+  update_role(datetime, new_role = "timestamp")
   
-# glmnet_rec |> prep() |> bake(new_data = NULL) 
+lm_rec_ws100 <-
+  recipe(ws_100_bc ~ ., data = ws_train_bc) |>
+  update_role(datetime, new_role = "timestamp")
 
-# library(usemodels)  # CheatSheets
+lm_rec_ws120 <-
+  recipe(ws_120_bc ~ ., data = ws_train_bc) |>
+  update_role(datetime, new_role = "timestamp")
 
-# Model: Elastic Net -------------
-glmnet_spec <-
-  linear_reg(penalty = tune(), mixture = tune()) |> 
-  set_engine("glmnet") |>
-  set_mode("regression")  
+# Model Spec: LM -------------
+lm_spec <-
+  linear_reg() |> 
+  set_engine("lm") |>
+  set_mode("regression")   
 
-glmnet_wf <-
-  workflow() |>
-  add_recipe(glmnet_rec) |>
-  add_model(glmnet_spec)
+lm_wf_ws060 <- workflow() |> add_recipe(lm_rec_ws060) |> add_model(lm_spec)
+lm_wf_ws100 <- workflow() |> add_recipe(lm_rec_ws100) |> add_model(lm_spec)
+lm_wf_ws120 <- workflow() |> add_recipe(lm_rec_ws120) |> add_model(lm_spec)
 
-# penalty = lambda; mixture = alpha (0 - Ridge, 1- Lasso)
+# === Test Error Estimations ===
 
-# penalty_ <- 10^seq(-4, -1, length.out = 20)
-# mixture_ = c(0.05, 0.2, 0.4, 0.6, 0.8, 1)
-penalty_elnet <- 10^seq(-3, -2, length.out = 40)
-mixture_elnet <- c(0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6)
-
-glmnet_grid <- tidyr::crossing(penalty = penalty_elnet, 
-                               mixture = mixture_elnet)
-
-# Tune with Folds
-
-tic("opt-ElasticNet")
+# ------ WS 60 Metres ------
+tic()
 set.seed(1982)
 doParallel::registerDoParallel()
-
-glmnet_tune <- tune_grid(glmnet_wf, 
-                         resamples = ames_folds,  # CV is faster!
-                         grid = glmnet_grid)
-
+lm_fit_ws060 <- fit_resamples(lm_wf_ws060, resamples = ws_train_boots)
 toc()
+lm_fit_ws060 |> collect_metrics(summarize = TRUE)
 
-# Explore Results 
-show_best(glmnet_tune, metric = "rmse")
+# ------ WS 100 Metres ------
+tic()
+set.seed(1982)
+doParallel::registerDoParallel()
+lm_fit_ws100 <- fit_resamples(lm_wf_ws100, resamples = ws_train_boots)
+toc()
+lm_fit_ws100 |> collect_metrics(summarize = TRUE)
 
-# Set best parameters
-final_glmnet <- glmnet_wf |> finalize_workflow(select_best(glmnet_tune, metric = "rmse"))
-final_glmnet
+# ------ WS 120 Metres ------
+tic()
+set.seed(1982)
+doParallel::registerDoParallel()
+lm_fit_ws120 <- fit_resamples(lm_wf_ws120, resamples = ws_train_boots)
+toc()
+lm_fit_ws120 |> collect_metrics(summarize = TRUE)
+
+# Final Fits 
+# fit_glm_elnet <- 
+#   final_glmnet |>
+#   fit(ames_train)
 
 
+
+# Add predictions
+
+ws$ws_060_pred <- predict(lm_fit_ws060)
+ws$ws_100_pred <- predict(lm_fit_ws100)
+ws$ws_120_pred <- predict(lm_fit_ws120)
+
+
+
+glimpse(ws)
 
 
 # klywind_ws |>
@@ -348,13 +372,15 @@ final_glmnet
 #     select(-datetime) |>
 #     pivot_longer(cols = everything(), names_to = "WS_sensor", values_to = "WindSpeed") |>
 #     mutate(WS_sensor = as.factor(WS_sensor)) |>
-#     ggplot(aes(x = WindSpeed)) +
+#     ggplot(aes(x = ws)) +
 #     geom_histogram(bins = 50, color = "lightgrey", fill = "lightgrey") + 
 #     labs(x = "Wind Speed [m/s]") +
 #     scale_x_continuous(breaks = seq(0, 35, 5)) +  
 #     facet_wrap(~WS_sensor)  
 
-
+    # mutate(ws_120 = (F1_WS_120_A_330_TFCA + F2_WS_120_B_150_TFCA)/2, .keep = "unused") |> 
+    # mutate(ws_100 = (F3_WS_100_A_330_TFCA + F4_WS_100_B_150_TFCA)/2, .keep = "unused") |> 
+    # mutate(ws_60 = (F5_WS_60_A_330_TFCA + F6_WS_60_B_150_TFCA)/2, .keep = "unused") 
 
 ```
 
