@@ -157,6 +157,19 @@ klywind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nDirection\n[Deg.]", x = "Time" ) +
     facet_wrap(~WD_sensor, ncol = 1) 
+
+# Definitive ready for Wind Rose Plot:
+
+wd <-
+    klywind |> 
+    select(datetime | contains("WD") & !contains(c("Min", "Max", "STDev"))) |>
+    slice(-(1:77)) |>
+    mutate(A2_WD_97_150_0_5V = coalesce(A2_WD_97_150_0_5V, A3_WD_57_150_0_5V), .keep = "all") |>
+    mutate(A1_WD_117_150_0_5V = coalesce(A1_WD_117_150_0_5V, A2_WD_97_150_0_5V), .keep = "all") |>
+    mutate(wd = (A3_WD_57_150_0_5V + A2_WD_97_150_0_5V + A1_WD_117_150_0_5V)/3, .keep = "all") |>
+    select(c(datetime, wd))
+
+
 ```
 
 ### Temperature - Raw Data
@@ -223,15 +236,54 @@ klywind |>
     facet_wrap(~RH_sensor, ncol = 1) 
 ```
 
-```{r}
-#| label: model_fill_missing 
 
-ws <- 
+
+```{r}
+#| label: coalesce_rm_outliers 
+
+rdxklywind <- 
     klywind |> 
-    select(datetime | contains("WS") & !contains(c("Min", "Max", "STDev", "TI30", "Syn"))) |>
-    mutate(ws_120 = coalesce(F1_WS_120_A_330_TFCA, F2_WS_120_B_150_TFCA), .keep = "unused") |> 
+    select(datetime | !contains(c("WD", "Min", "Max", "STDev", "TI30", "Syn"))) |>
+    mutate(ws_120 = coalesce(F2_WS_120_B_150_TFCA, F1_WS_120_A_330_TFCA), .keep = "unused") |> 
     mutate(ws_100 = coalesce(F3_WS_100_A_330_TFCA, F4_WS_100_B_150_TFCA), .keep = "unused") |> 
-    mutate(ws_060 = coalesce(F5_WS_60_A_330_TFCA, F6_WS_60_B_150_TFCA), .keep = "unused") 
+    mutate(ws_060 = coalesce(F6_WS_60_B_150_TFCA, F5_WS_60_A_330_TFCA), .keep = "unused") |> 
+    mutate(pr = ifelse(F7_PR_7_0_K611PB < 890, NA, F7_PR_7_0_K611PB), .keep = "unused") |>
+    mutate(pr = ifelse(pr < 931 & datetime < ymd("2022-02-01"), NA, pr)) |>
+    mutate(tem_115 = ifelse(A4_TEM_115_0_K846TH < 14.5, NA, A4_TEM_115_0_K846TH), .keep = "unused") |>
+    mutate(rh_115 = ifelse(A5_RH_115_0_K846TH < 50, NA, A5_RH_115_0_K846TH), .keep = "unused")
+
+# Corrplot
+
+
+rdxklywind |>
+    select(-datetime)|>
+    remove_missing()|>
+    cor(method = "pearson") |>
+    corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
+
+# aqui
+
+    # # fill(A7_RH_7_0_K846TH)
+    # pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    # mutate(sensor = as.factor(sensor)) |>
+    # ggplot(aes(x = datetime)) +
+    # geom_line(aes(y = value)) +     
+    # scale_x_datetime(date_labels = "%b-%Y") + 
+    # labs(y = "", x = "Time" ) +
+    # facet_wrap(~sensor, ncol = 1, scales = "free_y") 
+
+
+```
+
+
+
+```{r}
+
+```
+
+
+```{r}
+#| label: ws-boxcox
 
 # Plot
 ws |>     
@@ -242,6 +294,8 @@ ws |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
     facet_wrap(~WS_sensor, ncol = 1)
+
+
 ```
 
 ```{r}
