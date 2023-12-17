@@ -250,10 +250,24 @@ rdxklywind <-
     mutate(pr = ifelse(F7_PR_7_0_K611PB < 890, NA, F7_PR_7_0_K611PB), .keep = "unused") |>
     mutate(pr = ifelse(pr < 931 & datetime < ymd("2022-02-01"), NA, pr)) |>
     mutate(tem_115 = ifelse(A4_TEM_115_0_K846TH < 14.5, NA, A4_TEM_115_0_K846TH), .keep = "unused") |>
-    mutate(rh_115 = ifelse(A5_RH_115_0_K846TH < 50, NA, A5_RH_115_0_K846TH), .keep = "unused")
+    mutate(rh_115 = ifelse(A5_RH_115_0_K846TH < 50, NA, A5_RH_115_0_K846TH), .keep = "unused") |>
+    rename(tem_007 = "A6_TEM_7_0_K846TH") |>
+    rename(rh_007 = "A7_RH_7_0_K846TH")
+
+
+
+# Plot
+rdxklywind |>
+     # fill(A7_RH_7_0_K846TH)
+    pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = value)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~sensor, ncol = 1, scales = "free_y") 
 
 # Corrplot
-
 
 rdxklywind |>
     select(-datetime)|>
@@ -261,56 +275,118 @@ rdxklywind |>
     cor(method = "pearson") |>
     corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
 
-# aqui
+# ws_100 vs. ws_120
 
-    # # fill(A7_RH_7_0_K846TH)
-    # pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
-    # mutate(sensor = as.factor(sensor)) |>
-    # ggplot(aes(x = datetime)) +
-    # geom_line(aes(y = value)) +     
-    # scale_x_datetime(date_labels = "%b-%Y") + 
-    # labs(y = "", x = "Time" ) +
-    # facet_wrap(~sensor, ncol = 1, scales = "free_y") 
+rdxklywind |>
+    ggplot(aes(x = ws_100, y = ws_120)) +
+    geom_point()
 
 
-```
-
-
-
-```{r}
-
-```
-
-
-```{r}
-#| label: ws-boxcox
-
-# Plot
-ws |>     
-    pivot_longer(cols = contains("ws"), names_to = "WS_sensor", values_to = "WindSpeed") |>
-    mutate(WS_sensor = factor(WS_sensor, levels = c("ws_120", "ws_100", "ws_060"))) |>
-    ggplot(aes(x=datetime)) +
-    geom_line(aes(y=WindSpeed)) +     
-    scale_x_datetime(date_labels = "%b-%Y") + 
-    labs(y = "Wind\nSpeed\n[m/s]", x = "Time" ) +
-    facet_wrap(~WS_sensor, ncol = 1)
+rdxklywind |>
+    ggplot(aes(x = ws_060, y = ws_100)) +
+    geom_point()
 
 
 ```
+
 
 ```{r}
 #| label: ws_filling_models
 
+ws <-
+    rdxklywind |>
+    select(datetime | contains("ws")) |>    
+    mutate(ws_100 = ifelse(ws_100 < 1, NA, ws_100)) 
+    
 # Box-Cox Transformation
 
 ws_060_bc_results <- calc_boxcox_trans(ws$ws_060)
-ws$ws_060_bc <- ws_060_bc_results$x_bc
-
 ws_100_bc_results <- calc_boxcox_trans(ws$ws_100)
-ws$ws_100_bc <- ws_100_bc_results$x_bc
-
 ws_120_bc_results <- calc_boxcox_trans(ws$ws_120)
-ws$ws_120_bc <- ws_120_bc_results$x_bc
+
+ws_bc <- tibble(
+    datetime = ws$datetime,
+    ws_060_bc = ws_060_bc_results$x_bc,
+    ws_100_bc = ws_100_bc_results$x_bc,
+    ws_120_bc = ws_120_bc_results$x_bc
+)
+
+# Fill ws_100 in function of ws_120 
+lm_fit_ws_100_120 <- lm(ws_100_bc ~ ws_120_bc, data = ws_bc, na.action = na.exclude)
+# which(is.na(ws$ws_100) & !is.na(ws$ws_120))
+
+# Fill ws_120 in function of ws_100 
+lm_fit_ws_120_100 <- lm(ws_120_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
+# which(is.na(ws$ws_120) & !is.na(ws$ws_100))
+
+# Fill ws_100 in function of ws_060 
+lm_fit_ws_100_060 <- lm(ws_100_bc ~ ws_060_bc, data = ws_bc, na.action = na.exclude)
+# which(is.na(ws$ws_100) & !is.na(ws$ws_060))
+
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_100_bc_pred = predict(lm_fit_ws_100_120, ws_bc)) |>
+    mutate(ws_100_bc = coalesce(ws_100_bc, ws_100_bc_pred), .keep = "unused") |>
+
+    mutate(ws_120_bc_pred = predict(lm_fit_ws_120_100, ws_bc)) |>
+    mutate(ws_120_bc = coalesce(ws_120_bc, ws_120_bc_pred), .keep = "unused") |>
+
+    mutate(ws_100_bc_pred_2 = predict(lm_fit_ws_100_060, ws_bc)) |>
+    mutate(ws_100_bc = coalesce(ws_100_bc, ws_100_bc_pred_2), .keep = "unused")
+
+# Fill AGAIN ws_120 in function of ws_100 (already completed with ws_060 )
+lm_fit_ws_120_100_part_2 <- lm(ws_120_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
+
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_120_bc_pred_2 = predict(lm_fit_ws_120_100_part_2, ws_bc)) |>
+    mutate(ws_120_bc = coalesce(ws_120_bc, ws_120_bc_pred_2), .keep = "unused")
+
+# Instpect ws_060
+# which(is.na(ws_bc$ws_060_bc) & !is.na(ws_bc$ws_100_bc))
+
+# Fill ws_060 in function of ws_100 
+lm_fit_ws_060_100 <- lm(ws_060_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
+
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_060_bc_pred = predict(lm_fit_ws_060_100, ws_bc)) |>
+    mutate(ws_060_bc = coalesce(ws_060_bc, ws_060_bc_pred), .keep = "unused")
+
+length(which((is.na(ws_bc$ws_100_bc))))
+
+# Inverse Box-Cox
+
+ws <- 
+    ws_bc |>
+    mutate(ws_060 = inv_boxcox(ws_060_bc, ws_060_bc_results$lambda), .keep = "unused") |>
+    mutate(ws_100 = inv_boxcox(ws_100_bc, ws_100_bc_results$lambda), .keep = "unused") |>
+    mutate(ws_120 = inv_boxcox(ws_120_bc, ws_120_bc_results$lambda), .keep = "unused")
+    
+
+ws |>
+     # fill(A7_RH_7_0_K846TH)
+    pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = value)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~sensor, ncol = 1, scales = "free_y") 
+
+
+# Corrplot
+
+ws |>
+    select(-datetime)|>
+    remove_missing()|>
+    cor(method = "pearson") |>
+    corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
+
+
+
+
+
 
 
 ws_060_test_1 <- ws[which(is.na(ws$ws_060) & !is.na(ws$ws_100) & !is.na(ws$ws_120)), ]
@@ -424,6 +500,12 @@ ws <-
   mutate(ws_120_pred = inv_boxcox(.pred, ws_120_bc_results$lambda), .keep = "all")
 
 glimpse(ws)
+
+# ws_bc_100_rec <-
+#     recipe(ws_060_bc ~ ., data = ws_bc) |>
+#     step_impute_linear(ws_100_bc, impute_with = imp_vars(ws_120_bc))
+
+# ws_bc_100_imputed <- ws_bc_100_rec |> prep() |> bake(new_data = NULL)
 
 
 
