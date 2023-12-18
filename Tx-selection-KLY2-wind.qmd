@@ -335,24 +335,62 @@ ws_bc |>
     labs(y = "", x = "Time" ) +
     facet_wrap(~sensor, ncol = 1, scales = "free_y")
 
-length(which(is.na(ws_bc$ws_060_bc)))
+missing_dates <- unique(as.Date(ws_bc$datetime[(which(is.na(ws_bc$ws_060_bc)))]))
+missing_dates
+
+print(paste("There still are", 
+            length(missing_dates), 
+            "days with Missing Values."))
+
+# Fill missing with t-24 hour value
 
 ws_060_bc <- 
     ws_bc |>
     select(c(datetime, ws_060_bc)) |>
     rename(vals = ws_060_bc) |>
-    mutate(d = as.factor(strftime(date(datetime), format = "d%Y%m%d")))
-    
+    mutate(Tag = strftime(date(datetime), format = "d%Y%m%d")) |>
+    mutate(hhmm = strftime(datetime, format = "t%H%M", tz = "UTC")) 
+
+View(ws_060_bc[which(date(ws_060_bc$datetime) == date("2022-01-08")), ])
+
+# One row is one day
 ws_060_bc_wide <-
     ws_060_bc |> 
-    select(-datetime) |>
-    group_by(d) |>
+    select(-datetime, -hhmm) |>
+    group_by(Tag) |>
     mutate(row = row_number()) |>
-    pivot_wider(names_from = d, values_from = vals) |>
-    select(-row) |> 
-    t() 
+    pivot_wider(names_from = Tag, values_from = vals) |>
+    select(-row) |>
+    t() |>
+    as_tibble() |>
+    mutate(Tag = as_date(unique(ws_060_bc$Tag), format = "d%Y%m%d")) |>
+    relocate(Tag)
+    
+colnames(ws_060_bc_wide) <- c("Tag", unique(ws_060_bc$hhmm))
+# View(ws_060_bc_wide)
 
-View(ws_060_bc_wide)
+# Filter cols with NA to check
+
+# idx_dates_miss_wide <- which(ws_060_bc_wide$Tag %in% missing_dates)
+# ws_060_bc_wide_missing <- ws_060_bc_wide[idx_dates_miss_wide, ]
+# View(ws_060_bc_wide_missing)
+
+ws_060_bc_wide <-
+    ws_060_bc_wide |>
+    fill(contains("t"))
+
+ws_060_bc_long <-
+    ws_060_bc_wide |>
+    select(-Tag) |> 
+    pivot_longer(cols = starts_with("t"), names_to = "time", values_to = "vals") |>
+    mutate(datetime = ws_060_bc$datetime) |>
+    select(-time) |>
+    relocate(datetime)
+
+# ws_060_bc is complete!
+
+# Fill the others
+
 
 
 
