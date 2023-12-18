@@ -31,6 +31,7 @@ library(tictoc)
 library(tidyverse)
 library(corrplot)
 
+library(infotheo)
 library(tidymodels)
 tidymodels_prefer()
 library(glmnet)
@@ -77,7 +78,7 @@ klywind <-
     klywind |>
     rename_with(~ str_remove_all(., "\\[.*\\]|\\s+")) |>
     rename_with(~ str_replace_all(., "-", "_" )) |>
-    slice(-(1:25))
+    slice(-(1:50)) # Start exactly at 2021-07-01 00:00
 
 klywind |>
     select(-datetime)|>
@@ -275,31 +276,29 @@ rdxklywind |>
     cor(method = "pearson") |>
     corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
 
-# ws_100 vs. ws_120
 
-rdxklywind |>
-    ggplot(aes(x = ws_100, y = ws_120)) +
-    geom_point()
-
-
+# ws_060 vs. ws_120
 rdxklywind |>
     ggplot(aes(x = ws_060, y = ws_100)) +
     geom_point()
 
-
+# ws_100 vs. ws_120
+rdxklywind |>
+    ggplot(aes(x = ws_100, y = ws_120)) +
+    geom_point()
 ```
 
 
 ```{r}
 #| label: ws_filling_models
 
+# Isolate Wind Speed data
 ws <-
     rdxklywind |>
     select(datetime | contains("ws")) |>    
-    mutate(ws_100 = ifelse(ws_100 < 1, NA, ws_100)) 
+    mutate(ws_100 = ifelse(ws_100 < 1, NA, ws_100)) # Outliers removal
     
-# Box-Cox Transformation
-
+# ws Box-Cox Transformation
 ws_060_bc_results <- calc_boxcox_trans(ws$ws_060)
 ws_100_bc_results <- calc_boxcox_trans(ws$ws_100)
 ws_120_bc_results <- calc_boxcox_trans(ws$ws_120)
@@ -310,6 +309,57 @@ ws_bc <- tibble(
     ws_100_bc = ws_100_bc_results$x_bc,
     ws_120_bc = ws_120_bc_results$x_bc
 )
+
+# Let's fill the best one: ws_060
+
+# which(is.na(ws$ws_060) & !is.na(ws$ws_100))
+lm_fit_ws_060_100 <- lm(ws_060_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
+
+# which(is.na(ws$ws_060) & !is.na(ws$ws_120))
+lm_fit_ws_060_120 <- lm(ws_060_bc ~ ws_120_bc, data = ws_bc, na.action = na.exclude)
+
+# Fill ws_060
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_060_100_bc_pred = predict(lm_fit_ws_060_100, ws_bc)) |>
+    mutate(ws_060_bc = coalesce(ws_060_bc, ws_060_100_bc_pred), .keep = "unused") |>
+    mutate(ws_060_120_bc_pred = predict(lm_fit_ws_060_120, ws_bc)) |>
+    mutate(ws_060_bc = coalesce(ws_060_bc, ws_060_120_bc_pred), .keep = "unused")
+
+ws_bc |>
+    pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = value)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~sensor, ncol = 1, scales = "free_y")
+
+length(which(is.na(ws_bc$ws_060_bc)))
+
+ws_060_bc <- 
+    ws_bc |>
+    select(c(datetime, ws_060_bc)) |>
+    rename(vals = ws_060_bc) |>
+    mutate(d = as.factor(strftime(date(datetime), format = "d%Y%m%d")))
+    
+ws_060_bc_wide <-
+    ws_060_bc |> 
+    select(-datetime) |>
+    group_by(d) |>
+    mutate(row = row_number()) |>
+    pivot_wider(names_from = d, values_from = vals) |>
+    select(-row) |> 
+    t() 
+
+View(ws_060_bc_wide)
+
+
+
+```
+
+
+```{r}
 
 # Fill ws_100 in function of ws_120 
 lm_fit_ws_100_120 <- lm(ws_100_bc ~ ws_120_bc, data = ws_bc, na.action = na.exclude)
@@ -334,7 +384,7 @@ ws_bc <-
     mutate(ws_100_bc_pred_2 = predict(lm_fit_ws_100_060, ws_bc)) |>
     mutate(ws_100_bc = coalesce(ws_100_bc, ws_100_bc_pred_2), .keep = "unused")
 
-# Fill AGAIN ws_120 in function of ws_100 (already completed with ws_060 )
+# Fill AGAIN ws_120 in function of ws_100 (already filled with ws_060)
 lm_fit_ws_120_100_part_2 <- lm(ws_120_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
 
 ws_bc <- 
@@ -354,22 +404,50 @@ ws_bc <-
     mutate(ws_060_bc = coalesce(ws_060_bc, ws_060_bc_pred), .keep = "unused")
 
 length(which((is.na(ws_bc$ws_100_bc))))
-
+752
 # Inverse Box-Cox
 
 ws <- 
     ws_bc |>
     mutate(ws_060 = inv_boxcox(ws_060_bc, ws_060_bc_results$lambda), .keep = "unused") |>
     mutate(ws_100 = inv_boxcox(ws_100_bc, ws_100_bc_results$lambda), .keep = "unused") |>
-    mutate(ws_120 = inv_boxcox(ws_120_bc, ws_120_bc_results$lambda), .keep = "unused")
-    
+    mutate(ws_120 = inv_boxcox(ws_120_bc, ws_120_bc_results$lambda), .keep = "unused") |>
+    mutate(hour = hour(datetime)) |>
+    mutate(day = day(datetime)) |>
+    mutate(week = week(datetime)) |>
+    mutate(month = month(datetime)) 
 
-ws |>
+idx_NA <- which(is.na(ws$ws_060))
+unique(date(ws$datetime[idx_NA]))
+
+rdxklywind <-
+    rdxklywind |>
+    select(-datetime & !contains("ws")) |>
+    bind_cols(ws)
+
+
+calc_mi_score(rdxklywind, "ws_100")
+
+
+ws_060_rec <-
+    recipe(tem_007 ~ ., data = rdxklywind) |>
+    step_impute_bag(ws_060, 
+                    impute_with = imp_vars(pr, tem_115, tem_007, rh_007),
+                    seed_val = 1982)
+
+ws_060_imputed <- ws_060_rec |> prep() |> bake(new_data = NULL)
+
+ws_060_imputed$ws_060[idx_NA]
+
+test <- ws_060_imputed[idx_NA, ]
+View(test)
+test |>
+    
      # fill(A7_RH_7_0_K846TH)
     pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
     mutate(sensor = as.factor(sensor)) |>
     ggplot(aes(x = datetime)) +
-    geom_line(aes(y = value)) +     
+    geom_point(aes(y = value)) +     
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "", x = "Time" ) +
     facet_wrap(~sensor, ncol = 1, scales = "free_y") 
@@ -377,7 +455,7 @@ ws |>
 
 # Corrplot
 
-ws |>
+rdxklywind |>
     select(-datetime)|>
     remove_missing()|>
     cor(method = "pearson") |>
@@ -501,12 +579,6 @@ ws <-
 
 glimpse(ws)
 
-# ws_bc_100_rec <-
-#     recipe(ws_060_bc ~ ., data = ws_bc) |>
-#     step_impute_linear(ws_100_bc, impute_with = imp_vars(ws_120_bc))
-
-# ws_bc_100_imputed <- ws_bc_100_rec |> prep() |> bake(new_data = NULL)
-
 
 
 
@@ -529,8 +601,11 @@ glimpse(ws)
     # mutate(ws_120 = (F1_WS_120_A_330_TFCA + F2_WS_120_B_150_TFCA)/2, .keep = "unused") |> 
     # mutate(ws_100 = (F3_WS_100_A_330_TFCA + F4_WS_100_B_150_TFCA)/2, .keep = "unused") |> 
     # mutate(ws_60 = (F5_WS_60_A_330_TFCA + F6_WS_60_B_150_TFCA)/2, .keep = "unused") 
-```
 
+
+
+
+```
 It's important to keep all units within the **SI**, therefore I will convert the following units:
 
 -   PR: Pressure \[mbar\] --\> \[Pa\]
