@@ -181,7 +181,8 @@ wd <-
 #| warning: false
 #| output: true
 #| fig-width: 6
-#| fig-height: 6
+#| fig-height: 6\
+#| eval: false
 
 klywind |> 
     select(datetime | contains("TEM") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
@@ -204,6 +205,7 @@ klywind |>
 #| output: true
 #| fig-width: 6
 #| fig-height: 6
+#| eval: false
 
 klywind |> 
     select(datetime | contains("PR") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
@@ -225,6 +227,7 @@ klywind |>
 #| output: true
 #| fig-width: 6
 #| fig-height: 6
+#| eval: false
 
 klywind |> 
     select(datetime | contains("RH") & !contains(c("Min", "Max", "STDev", "TI30"))) |> 
@@ -389,7 +392,63 @@ ws_060_bc_long <-
 
 # ws_060_bc is complete!
 
+ws_bc <-
+    ws_bc |>
+    mutate(ws_060_bc = ws_060_bc_long$vals)
+
 # Fill the others
+
+# Fill ws_100
+lm_fit_ws_100_060 <- lm(ws_100_bc ~ ws_060_bc, data = ws_bc, na.action = na.exclude)
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_100_060_bc_pred = predict(lm_fit_ws_100_060, ws_bc)) |>
+    mutate(ws_100_bc = coalesce(ws_100_bc, ws_100_060_bc_pred), .keep = "unused")
+
+# Fill ws_120
+lm_fit_ws_120_100 <- lm(ws_120_bc ~ ws_100_bc, data = ws_bc, na.action = na.exclude)
+ws_bc <- 
+    ws_bc |>
+    mutate(ws_120_100_bc_pred = predict(lm_fit_ws_120_100, ws_bc)) |>
+    mutate(ws_120_bc = coalesce(ws_120_bc, ws_120_100_bc_pred), .keep = "unused")
+
+# Inverser Box-Cox and Replace full columns
+
+ws <-
+ ws_bc |>
+ mutate(ws_060 = inv_boxcox(ws_060_bc, ws_060_bc_results$lambda), .keep = "unused") |>
+ mutate(ws_100 = inv_boxcox(ws_100_bc, ws_100_bc_results$lambda), .keep = "unused") |>
+ mutate(ws_120 = inv_boxcox(ws_120_bc, ws_120_bc_results$lambda), .keep = "unused") 
+
+
+rdxklywind <-
+    rdxklywind |>
+    mutate(ws_avg_060_100_120 = (ws$ws_060 + ws$ws_100 + ws$ws_120)/3 , .keep = "unused") |>
+    select(-ws_060, -ws_100, -ws_120)
+    
+
+# Corrplot
+rdxklywind |>
+    select(-datetime)|>
+    remove_missing()|>
+    cor(method = "pearson") |>
+    corrplot(type = "lower", method = "circle", insig = 'blank', order = "hclust", diag = FALSE,  tl.col="black", tl.cex = 0.8, addCoef.col = 'black', number.cex = 0.6)
+
+```
+
+## Fill Temperatures
+
+```{r}
+#| labels: fill-tem
+
+# Fill tem_007 with tem_115 and rh_007 
+
+
+
+
+
+
+# Fill tem_115 with tem_007 and ???
 
 
 
@@ -397,7 +456,11 @@ ws_060_bc_long <-
 ```
 
 
+
+
 ```{r}
+#| eval: false
+
 
 # Fill ws_100 in function of ws_120 
 lm_fit_ws_100_120 <- lm(ws_100_bc ~ ws_120_bc, data = ws_bc, na.action = na.exclude)
@@ -644,6 +707,8 @@ glimpse(ws)
 
 
 ```
+
+
 It's important to keep all units within the **SI**, therefore I will convert the following units:
 
 -   PR: Pressure \[mbar\] --\> \[Pa\]
