@@ -412,7 +412,7 @@ ws_bc <-
     mutate(ws_120_100_bc_pred = predict(lm_fit_ws_120_100, ws_bc)) |>
     mutate(ws_120_bc = coalesce(ws_120_bc, ws_120_100_bc_pred), .keep = "unused")
 
-# Inverser Box-Cox and Replace full columns
+# Inverse Box-Cox and Replace full columns
 
 ws <-
  ws_bc |>
@@ -423,10 +423,9 @@ ws <-
 
 rdxklywind <-
     rdxklywind |>
-    mutate(ws_avg_060_100_120 = (ws$ws_060 + ws$ws_100 + ws$ws_120)/3 , .keep = "unused") |>
+    mutate(ws_avg = (ws$ws_060 + ws$ws_100 + ws$ws_120)/3 , .keep = "unused") |>
     select(-ws_060, -ws_100, -ws_120)
     
-
 # Corrplot
 rdxklywind |>
     select(-datetime)|>
@@ -436,24 +435,36 @@ rdxklywind |>
 
 ```
 
-## Fill Temperatures
+## Fill RH
 
 ```{r}
-#| labels: fill-tem
+#| labels: fill the rest
 
-# Fill tem_007 with tem_115 and rh_007 
+rdxklywind <-
+    rdxklywind |>
+    mutate(pr = replace_na_with_median(pr)) |>
+    fill(rh_007) |>
+    mutate(rh_115 = replace_na_with_median(rh_115)) |>
+    fill(tem_007) |>
+    mutate(tem_115 = replace_na_with_median(tem_115))
+
+# Calc Avg.
+rdxklywind <-
+    rdxklywind |>
+    mutate(rh_avg = (rh_007 + rh_115)/2 , .keep = "unused") |>
+    mutate(tem_avg = (tem_007 + tem_115)/2 , .keep = "unused")
 
 
-
-
-
-
-# Fill tem_115 with tem_007 and ???
-
-
-
-
+rdxklywind |>
+    pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    # mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = value)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~sensor, ncol = 1, scales = "free_y")
 ```
+
 
 
 
