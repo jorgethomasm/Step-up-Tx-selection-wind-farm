@@ -69,6 +69,12 @@ wt_min_tip_speed <- 2*pi * (wt_min_speed/60) * (wt_rotor_diam/2) # [m/s]
 wt_max_tip_speed <- 2*pi * (wt_max_speed/60) * (wt_rotor_diam/2) # [m/s] Nominal
 
 # wt_max_tip_speed <- 92 # [m/s] # From Specs.
+
+# ====== Onshore Wind Park =======
+
+n_wind_turbines <- 16
+installed_capacity <- (n_wind_turbines * wt_rated_power) / 1000 # [MW]
+
 ```
 
 # On-Site Wind Profile
@@ -462,15 +468,29 @@ rdxklywind <-
     mutate(rh_115 = replace_na_with_median(rh_115)) |>
     fill(tem_007) |>
     mutate(tem_115 = replace_na_with_median(tem_115))
+```
 
-# Calc Avg.
-rdxklywind <-
+## Calculate Power Output
+
+```{r}
+
+# Calculations
+
+wind_10min <-
     rdxklywind |>
-    mutate(rh_avg = (rh_007 + rh_115)/2 , .keep = "unused") |>
-    mutate(tem_avg = (tem_007 + tem_115)/2 , .keep = "unused")
+    mutate(rh_avg = (rh_007 + rh_115)/2 , .keep = "unused") |> 
+    mutate(tem_avg = (tem_007 + tem_115)/2 , .keep = "unused") |>
+    mutate(rho_h = calc_humid_air_density(tem_avg, rh_avg/100, pr)) |>
+    mutate(p_out = calc_wt_output_power(rated_power = wt_rated_power,
+                                        area = wt_area,
+                                        power_coeff = Cp,
+                                        cut_in = wt_ws_cut_in,
+                                        cut_out = wt_ws_cut_out,
+                                        air_density = rho_h,
+                                        wind_speed = ws_avg)) 
 
 
-rdxklywind |>
+wind_10min |>
     pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
     # mutate(sensor = as.factor(sensor)) |>
     ggplot(aes(x = datetime)) +
@@ -489,18 +509,18 @@ library(xts)
 # https://community.rstudio.com/t/create-bins-the-tidy-way/63492
 
 
-rdxklywind_xts <- xts(rdxklywind[, 2:ncol(rdxklywind)], as.POSIXct(rdxklywind$datetime))
+wind_10min_xts <- xts::xts(wind_10min[, 2:ncol(wind_10min)], as.POSIXct(wind_10min$datetime))
 
-ends <- endpoints(rdxklywind_xts, "hours")
+ends <- xts::endpoints(wind_10min_xts, "hours")
 ends <- ends + 1
 ends[length(ends)] <- ends[length(ends)] - 1
 
-rdxklywind_hh <- period.apply(rdxklywind_xts, ends, mean)
+wind_hourly_xts <- xts::period.apply(wind_10min_xts, ends, mean)
 
 wind <- 
-    rdxklywind_hh |>
+    wind_hourly_xts |>
     as_tibble() |>
-    mutate(datetime = time(rdxklywind_hh)) |>    
+    mutate(datetime = time(wind_hourly_xts)) |>    
     relocate(datetime) |>
     slice(2:n())
 
@@ -510,18 +530,102 @@ wind <-
 
 ```{r}
 
-p_sat <- calc_sat_water_vapour_press(wind$tem_avg)
+wind |>
+ select(datetime, ws_avg, p_out) |>
+ pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    # mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    geom_line(aes(y = value)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~sensor, ncol = 1, scales = "free_y")
+ ggplot(aes(x= datetime)) +
+ geom_line(aes(y = p_out))
 
-wind <- 
+
+# Wind Park Power 
+
+power <- 
     wind |>
-    mutate(rho_h = calc_humid_air_density(tem_avg, rh_avg/100, pr)) |>
-    mutate(p_out = calc_wt_output_power(rated_power = wt_rated_power,
-                                        area = wt_area,
-                                        Cp = Cp,
-                                        cut_in = wt_ws_cut_in,
-                                        cut_out = wt_ws_cut_out,
-                                        air_density = rho_h,
-                                        wind_speed = ws_avg)) 
+    select(datetime, p_out) |>
+    mutate(kly_kW =  n_wind_turbines * p_out) |>
+    mutate(hh = hour(datetime)) |>
+    mutate(mm = month(datetime)) |>
+    select(-p_out)
+
+power$period <- NA
+power$period[1:8760] <- 1
+power$period[8761:nrow(power)] <- 2
+power$period <- as.factor(power$period)
+
+power |>
+ select(-hh, -mm) |>
+ pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+    # mutate(sensor = as.factor(sensor)) |>
+    ggplot(aes(x = datetime)) +
+    labs(title = "Kalayan 2 Output Power [MW]") +
+    geom_line(aes(y = value/1000)) +     
+    scale_x_datetime(date_labels = "%b-%Y") + 
+    labs(y = "", x = "Time" ) +
+    facet_wrap(~period, ncol = 1, scales = "free_y")
+
+
+power_1 <- subset(power, period == 1)
+power_2 <- subset(power, period == 2)
+
+power_wide <- tibble(period_1 =  power_1$kly_kW,  period_2 = NA)
+power_wide$period_2[1:nrow(power_2)] <-  power_2$kly_kW
+
+power_wide <-
+    power_wide |>
+    mutate(period_2 = coalesce(period_2, period_1)) |> 
+    mutate(periods_avg = (period_1 + period_2)/2)
+
+
+kly_e_out <-
+    power_wide |>
+    select(period_1) |>
+    mutate(MW = period_1 / 1000, .keep = "unused") |>
+    arrange(desc(MW)) |>
+    mutate(duration = seq(1,n()))
+
+# Projected Capacity Factor
+# https://en.wikipedia.org/wiki/Capacity_factor
+
+
+GWh_year_nameplate <- 8760 * installed_capacity
+
+GWh_year <- sum(kly_e_out$MW)
+
+capacity_factor <- GWh_year / GWh_year_nameplate
+
+# Duration @ Rated power
+
+dur_max_power <- length(which(kly_e_out$MW == installed_capacity))
+dur_null_power <- length(which(kly_e_out$MW == 0))
+
+
+kly_e_out |>
+    ggplot(aes(x = duration, y = MW)) +
+    labs(
+        title = "Kalayan 2 - Yearly Output Power (theoretical)",
+        x = "1 Year Period - Duration [h]",
+        y = "[MW]") +
+    
+    annotate("rect", 
+             xmin = 0, 
+             xmax = dur_max_power, 
+             ymin = 0, 
+             ymax = installed_capacity, alpha = 0.2, color = "green", fill="green") +
+    annotate("rect", 
+             xmin = 8760 - dur_null_power, 
+             xmax = 8760, 
+             ymin = 0, 
+             ymax = installed_capacity, alpha = 0.2, color = "red", fill="red") +
+    scale_x_continuous(breaks = seq(0, nrow(kly_e_out), 1000)) +
+    geom_line() +
+    scale_y_continuous(breaks = seq(0, 100, 10))
+
 
 
 
