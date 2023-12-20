@@ -49,15 +49,26 @@ theme_set(jthomggtheme)
 
 # Variable Speed - Variable pitch
 
+wt_rated_power <- 6000 #  [kW]
+wt_rated_wind_speed <- 11.4 # [m/s] at standard air density
 wt_area <- 21382 # squared metres
 wt_hub_height <- 100 # metres
-Cp <- 0.45
+Cp <- 0.45 # Power Coefficient
 wt_rotor_diam <- 165 # metres
 
 wt_ws_cut_in <- 3 # m/s
 wt_ws_cut_out <- 24 # m/s
 
-v_tan <- 92 # m/s For TSR (Tip-Speed Ratio, lambda) calc.
+# Speed Range During Power Production
+wt_min_speed <- 5.5  # [RPM]
+wt_max_speed <- 10.7  # [RPM] Nominal
+
+#' Tip speed of blade 
+#' Linear speed of blade tip for Tip-Speed Ratio (lambda) calc.
+wt_min_tip_speed <- 2*pi * (wt_min_speed/60) * (wt_rotor_diam/2) # [m/s]
+wt_max_tip_speed <- 2*pi * (wt_max_speed/60) * (wt_rotor_diam/2) # [m/s] Nominal
+
+# wt_max_tip_speed <- 92 # [m/s] # From Specs.
 ```
 
 # On-Site Wind Profile
@@ -354,7 +365,11 @@ ws_060_bc <-
     mutate(Tag = strftime(date(datetime), format = "d%Y%m%d")) |>
     mutate(hhmm = strftime(datetime, format = "t%H%M", tz = "UTC")) 
 
-View(ws_060_bc[which(date(ws_060_bc$datetime) == date("2022-01-08")), ])
+# View(ws_060_bc[which(date(ws_060_bc$datetime) == date("2022-01-08")), ])
+
+# For Pivot Wider:
+# https://www.youtube.com/watch?v=UR-4vBEN3Fw
+# https://www.youtube.com/watch?v=4-sqsCANxHU
 
 # One row is one day
 ws_060_bc_wide <-
@@ -435,7 +450,7 @@ rdxklywind |>
 
 ```
 
-## Fill RH
+## Fill the Rest
 
 ```{r}
 #| labels: fill the rest
@@ -465,8 +480,55 @@ rdxklywind |>
     facet_wrap(~sensor, ncol = 1, scales = "free_y")
 ```
 
+## Hourly Aggregation
+
+```{r}
+library(xts)
+
+#  Check: https://ggplot2.tidyverse.org/reference/cut_interval.html
+# https://community.rstudio.com/t/create-bins-the-tidy-way/63492
 
 
+rdxklywind_xts <- xts(rdxklywind[, 2:ncol(rdxklywind)], as.POSIXct(rdxklywind$datetime))
+
+ends <- endpoints(rdxklywind_xts, "hours")
+ends <- ends + 1
+ends[length(ends)] <- ends[length(ends)] - 1
+
+rdxklywind_hh <- period.apply(rdxklywind_xts, ends, mean)
+
+wind <- 
+    rdxklywind_hh |>
+    as_tibble() |>
+    mutate(datetime = time(rdxklywind_hh)) |>    
+    relocate(datetime) |>
+    slice(2:n())
+
+```
+
+# Wind Power Output calculations
+
+```{r}
+
+p_sat <- calc_sat_water_vapour_press(wind$tem_avg)
+
+wind <- 
+    wind |>
+    mutate(rho_h = calc_humid_air_density(tem_avg, rh_avg/100, pr)) |>
+    mutate(p_out = calc_wt_output_power(rated_power = wt_rated_power,
+                                        area = wt_area,
+                                        Cp = Cp,
+                                        cut_in = wt_ws_cut_in,
+                                        cut_out = wt_ws_cut_out,
+                                        air_density = rho_h,
+                                        wind_speed = ws_avg)) 
+
+
+
+
+
+
+```
 
 
 ```{r}
@@ -551,18 +613,19 @@ ws_060_imputed <- ws_060_rec |> prep() |> bake(new_data = NULL)
 
 ws_060_imputed$ws_060[idx_NA]
 
-test <- ws_060_imputed[idx_NA, ]
-View(test)
-test |>
+# test <- ws_060_imputed[idx_NA, ]
+# View(test)
+
+# test |>
     
-     # fill(A7_RH_7_0_K846TH)
-    pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
-    mutate(sensor = as.factor(sensor)) |>
-    ggplot(aes(x = datetime)) +
-    geom_point(aes(y = value)) +     
-    scale_x_datetime(date_labels = "%b-%Y") + 
-    labs(y = "", x = "Time" ) +
-    facet_wrap(~sensor, ncol = 1, scales = "free_y") 
+#      # fill(A7_RH_7_0_K846TH)
+#     pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
+#     mutate(sensor = as.factor(sensor)) |>
+#     ggplot(aes(x = datetime)) +
+#     geom_point(aes(y = value)) +     
+#     scale_x_datetime(date_labels = "%b-%Y") + 
+#     labs(y = "", x = "Time" ) +
+#     facet_wrap(~sensor, ncol = 1, scales = "free_y") 
 
 
 # Corrplot
