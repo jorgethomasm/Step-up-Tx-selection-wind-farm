@@ -539,8 +539,6 @@ wind |>
     scale_x_datetime(date_labels = "%b-%Y") + 
     labs(y = "", x = "Time" ) +
     facet_wrap(~sensor, ncol = 1, scales = "free_y")
- ggplot(aes(x= datetime)) +
- geom_line(aes(y = p_out))
 
 
 # Wind Park Power 
@@ -558,6 +556,7 @@ power$period[1:8760] <- 1
 power$period[8761:nrow(power)] <- 2
 power$period <- as.factor(power$period)
 
+
 power |>
  select(-hh, -mm) |>
  pivot_longer(cols = where(is.numeric), names_to = "sensor", values_to = "value") |>
@@ -572,8 +571,12 @@ power |>
 
 power_1 <- subset(power, period == 1)
 power_2 <- subset(power, period == 2)
+power_2022 <- subset(power, year(datetime) == 2022)
 
-power_wide <- tibble(period_1 =  power_1$kly_kW,  period_2 = NA)
+power_wide <- tibble(period_1 =  power_1$kly_kW,  
+                     period_2 = NA,
+                     period_2022 = power_2022$kly_kW)
+
 power_wide$period_2[1:nrow(power_2)] <-  power_2$kly_kW
 
 power_wide <-
@@ -582,19 +585,23 @@ power_wide <-
     mutate(periods_avg = (period_1 + period_2)/2)
 
 
+# Select 2022
 kly_e_out <-
     power_wide |>
-    select(period_1) |>
-    mutate(MW = period_1 / 1000, .keep = "unused") |>
+    select(period_2022) |>
+    mutate(MW = period_2022 / 1000, .keep = "unused") |>
     arrange(desc(MW)) |>
-    mutate(duration = seq(1,n()))
+    mutate(pu = MW / installed_capacity) |>
+    mutate(dur = seq(1,n())) |>
+    mutate(dur_perc = 100*dur / 8760)
+    
+
 
 # Projected Capacity Factor
 # https://en.wikipedia.org/wiki/Capacity_factor
 
 
 GWh_year_nameplate <- 8760 * installed_capacity
-
 GWh_year <- sum(kly_e_out$MW)
 
 capacity_factor <- GWh_year / GWh_year_nameplate
@@ -604,29 +611,58 @@ capacity_factor <- GWh_year / GWh_year_nameplate
 dur_max_power <- length(which(kly_e_out$MW == installed_capacity))
 dur_null_power <- length(which(kly_e_out$MW == 0))
 
-
+# plot MW
 kly_e_out |>
-    ggplot(aes(x = duration, y = MW)) +
+    ggplot(aes(x = dur, y = MW)) +
+    
+    labs(title = "Kalayan 2: Duration curve of theoretical output power",
+         x = "1 Year Period - Duration [h]",
+         y = "[MW]",
+         caption = "Projected Capacity Factor overestimated: Forced and scheduled outages not included.") +   
+    annotate("rect", 
+             xmin = 0, xmax = dur_max_power, 
+             ymin = 0, ymax = installed_capacity, 
+             alpha = 0.2, 
+             color = "green", 
+             fill="green") +
+    
+    annotate("rect", 
+             xmin = 8760 - dur_null_power, xmax = 8760, 
+             ymin = 0, ymax = installed_capacity, 
+             alpha = 0.2, 
+             color = "red", 
+             fill="red") +
+    annotate("text", x = 8760/2, y = 2.5, , label = "Representative Year: 2022") +
+    annotate("text", x = 6000, y = 80, label = paste("Capacity Factor = ", round(100*capacity_factor, 2), "%")) +
+    geom_line() +
+    scale_x_continuous(breaks = seq(0, nrow(kly_e_out), 1000)) +
+    scale_y_continuous(breaks = seq(0, 100, 10))
+    
+    
+# plot pu
+kly_e_out |>
+    ggplot(aes(x = dur_perc, y = pu)) +
     labs(
-        title = "Kalayan 2 - Yearly Output Power (theoretical)",
-        x = "1 Year Period - Duration [h]",
-        y = "[MW]") +
+        title = "Kalayan 2: Duration curve of theoretical output power",
+        x = "1 Year Period - Duration [%]",
+        y = "[pu]",
+        caption = "Projected Capacity Factor overestimated: Forced and scheduled outages not included.") +
     
     annotate("rect", 
              xmin = 0, 
-             xmax = dur_max_power, 
+             xmax = 100*dur_max_power/8760, 
              ymin = 0, 
-             ymax = installed_capacity, alpha = 0.2, color = "green", fill="green") +
+             ymax = 1, alpha = 0.2, color = "green", fill="green") +
     annotate("rect", 
-             xmin = 8760 - dur_null_power, 
-             xmax = 8760, 
+             xmin = 100*(1 - dur_null_power/8760), 
+             xmax = 100, 
              ymin = 0, 
-             ymax = installed_capacity, alpha = 0.2, color = "red", fill="red") +
-    scale_x_continuous(breaks = seq(0, nrow(kly_e_out), 1000)) +
+             ymax = 1, alpha = 0.2, color = "red", fill="red") +
+    annotate("text", x = 50, y = 0.025, , label = "Representative Year: 2022") +
+    annotate("text", x = 100*6000/8760, y = 80/installed_capacity, label = paste("Capacity Factor = ", round(100*capacity_factor, 2), "%")) +
+    scale_x_continuous(breaks = seq(0, 100, 10)) +
     geom_line() +
-    scale_y_continuous(breaks = seq(0, 100, 10))
-
-
+    scale_y_continuous(breaks = seq(0, 1, 0.05))
 
 
 
