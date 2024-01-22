@@ -12,3 +12,8 @@ bibliography/
 tools/
 
 /.quarto/
+
+# User specific files
+*.csv
+*.xls
+*.ods
