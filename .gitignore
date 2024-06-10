@@ -4,12 +4,12 @@
 .Ruserdata
 
 # User specific folders
-data/
-imgs/
-models/
-specs/
-bibliography/
-tools/
+/data/
+/imgs/
+/models/
+/specs/
+/bibliography/
+/tools/
 
 /.quarto/
 

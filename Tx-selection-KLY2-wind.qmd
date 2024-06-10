@@ -192,10 +192,11 @@ wd <-
     klywind |> 
     select(datetime | contains("WD") & !contains(c("Min", "Max", "STDev"))) |>
     slice(-(1:77)) |>
-    mutate(A2_WD_97_150_0_5V = coalesce(A2_WD_97_150_0_5V, A3_WD_57_150_0_5V), .keep = "all") |>
+    mutate(A2_WD_97_150_0_5V = coalesce(A2_WD_97_150_0_5V, A3_WD_57_150_0_5V), keep = "all") |>
     mutate(A1_WD_117_150_0_5V = coalesce(A1_WD_117_150_0_5V, A2_WD_97_150_0_5V), .keep = "all") |>
     mutate(wd = (A3_WD_57_150_0_5V + A2_WD_97_150_0_5V + A1_WD_117_150_0_5V)/3, .keep = "all") |>
-    select(c(datetime, wd))
+    select(datetime, wd)
+
 
 ```
 
@@ -518,7 +519,6 @@ wind_10min |>
 
 ```
 
-
 ### Power Output Hourly Aggregation
 
 ```{r}
@@ -545,7 +545,7 @@ wind <-
 
 ```
 
-## Wind Roses 
+## Wind Roses
 
 ```{r}
 #| label: windroses
@@ -591,7 +591,6 @@ wind |>
           axis.ticks.y = element_blank())
 
 ```
-
 
 # Capacity Factor for the Wind Park
 
@@ -734,7 +733,6 @@ kly_e_out |>
     scale_y_continuous(breaks = seq(0, 1, 0.05))
 ```
 
-
 ## Probabilistic Density
 
 Taking a two years period I'll estimate the Wind Speed distribution to have an indea of the probabilities of generating certain ammount of power.
@@ -750,7 +748,6 @@ Taking a two years period I'll estimate the Wind Speed distribution to have an i
 
 
 ```
-
 
 ## How to calculate the humid air density?
 
@@ -796,7 +793,7 @@ where:
 
 ${p_{v}}$, vapor pressure of water
 
-$\phi$, relative humidity (0.0–1.0)
+$\phi$, relative humidity (0.0--1.0)
 
 $p_{sat}$, saturation vapor pressure
 
